@@ -64,18 +64,36 @@ async def cmd_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_admin(update):
         return
 
-    args = [arg.lower() for arg in (context.args or [])]
-    if args != ["ls"]:
-        await update.message.reply_text("Usage: /image ls")
+    args = list(context.args or [])
+    subcommand = args[0].lower() if args else ""
+
+    if subcommand == "ls" and len(args) == 1:
+        status = await update.message.reply_text("Fetching images...")
+        result = await docker_ops.list_images()
+        if result.error:
+            await status.edit_text(f"Could not list images.\n\n{result.error}")
+            return
+        await _send_table(status, docker_ops.format_image_table(result.images))
         return
 
-    status = await update.message.reply_text("Fetching images...")
-    result = await docker_ops.list_images()
-    if result.error:
-        await status.edit_text(f"Could not list images.\n\n{result.error}")
+    if subcommand == "rm" and len(args) == 2:
+        identifier = args[1]
+        if not identifier or identifier.startswith("-"):
+            await update.message.reply_text("Invalid image identifier.")
+            return
+
+        status = await update.message.reply_text(
+            f"Removing image {identifier}..."
+        )
+        result = await docker_ops.remove_image(identifier)
+        await status.edit_text(
+            docker_ops.format_remove_result(identifier, result)
+        )
         return
 
-    await _send_table(status, docker_ops.format_image_table(result.images))
+    await update.message.reply_text(
+        "Usage:\n/image ls\n/image rm <IDENTIFIER>"
+    )
 
 
 async def cmd_ps(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

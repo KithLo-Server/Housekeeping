@@ -14,6 +14,7 @@ PRUNE_COMMANDS: Dict[str, Tuple[str, ...]] = {
 }
 PS_COMMAND = ("docker", "ps", "-s", "--format", "{{json .}}")
 IMAGE_LIST_COMMAND = ("docker", "system", "df", "-v")
+IMAGE_REMOVE_PREFIX = ("docker", "image", "rm")
 
 _MAX_OUTPUT_CHARS = 3500
 _SHORT_ID_LENGTH = 12
@@ -23,7 +24,7 @@ _SIZE_RE = re.compile(
     r"(?:\s*\(virtual\s+(?P<virtual>[^)]+)\))?\s*$"
 )
 
-_prune_lock = asyncio.Lock()
+_mutation_lock = asyncio.Lock()
 
 
 @dataclass
@@ -122,7 +123,7 @@ async def prune(choice: str) -> PruneResult:
     if command is None:
         raise ValueError(f"Unsupported prune choice: {choice!r}")
 
-    async with _prune_lock:
+    async with _mutation_lock:
         result = await _run_docker(command, config.PRUNE_TIMEOUT_SECONDS)
 
     return PruneResult(
@@ -211,6 +212,36 @@ def format_container_table(containers: List[ContainerInfo]) -> str:
         for item in containers
     ]
     return _format_table(headers, rows)
+
+
+async def remove_image(identifier: str) -> CommandResult:
+    """Runs docker image rm for a single identifier."""
+    command = (*IMAGE_REMOVE_PREFIX, identifier)
+    async with _mutation_lock:
+        return await _run_docker(command, config.IMAGE_RM_TIMEOUT_SECONDS)
+
+
+def format_remove_result(identifier: str, result: CommandResult) -> str:
+    if result.timed_out:
+        return f"Removing {identifier} timed out.\n\n{result.output}"
+
+    if result.returncode != 0:
+        details = result.output or "No error output was produced."
+        return (
+            f"Could not remove {identifier} "
+            f"(exit code {result.returncode}).\n\n"
+            f"{details[:_MAX_OUTPUT_CHARS]}"
+        )
+
+    summary = [
+        "Image removed.",
+        "",
+        f"Identifier: {identifier}",
+        f"Command: {result.command}",
+    ]
+    if result.output:
+        summary.extend(["", result.output[:_MAX_OUTPUT_CHARS]])
+    return "\n".join(summary)
 
 
 def _is_named_image(image: ImageInfo) -> bool:
