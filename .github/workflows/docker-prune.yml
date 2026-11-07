@@ -1,0 +1,38 @@
+name: Docker system prune
+
+on:
+  workflow_dispatch:
+    inputs:
+      volumes:
+        description: Also prune unused volumes (deletes data)
+        type: boolean
+        default: false
+  schedule:
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-prune
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: [self-hosted]
+    steps:
+      - name: Verify Docker is available
+        run: docker version
+
+      - name: Disk usage before prune
+        run: docker system df
+
+      - name: Prune stopped containers, unused networks, dangling images and build cache
+        run: docker system prune -af
+
+      - name: Prune unused volumes
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.volumes }}
+        run: docker volume prune -af
+
+      - name: Disk usage after prune
+        run: docker system df
