@@ -13,6 +13,7 @@ PRUNE_COMMANDS: Dict[str, Tuple[str, ...]] = {
     "all": ("docker", "system", "prune", "-af"),
 }
 PS_COMMAND = ("docker", "ps", "-s", "--format", "{{json .}}")
+IMAGE_LIST_COMMAND = ("docker", "system", "df", "-v")
 
 _MAX_OUTPUT_CHARS = 3500
 _SHORT_ID_LENGTH = 12
@@ -53,6 +54,24 @@ class ContainerInfo:
 @dataclass
 class ContainerListResult:
     containers: List[ContainerInfo] = field(default_factory=list)
+    error: str = ""
+    timed_out: bool = False
+
+
+@dataclass
+class ImageInfo:
+    id: str
+    name: str
+    tag: str
+    size: str
+    shared_size: str
+    unique_size: str
+    containers: str
+
+
+@dataclass
+class ImageListResult:
+    images: List[ImageInfo] = field(default_factory=list)
     error: str = ""
     timed_out: bool = False
 
@@ -164,15 +183,9 @@ async def list_containers() -> ContainerListResult:
     return ContainerListResult(containers=containers, error=error)
 
 
-def format_container_table(containers: List[ContainerInfo]) -> str:
-    if not containers:
-        return "No running containers."
-
-    headers = ("ID", "NAME", "WRITABLE", "VIRTUAL")
-    rows = [
-        (item.id, item.name, item.writable_size, item.virtual_size)
-        for item in containers
-    ]
+def _format_table(
+    headers: Tuple[str, ...], rows: List[Tuple[str, ...]]
+) -> str:
     widths = [
         max(len(header), *(len(row[index]) for row in rows))
         for index, header in enumerate(headers)
@@ -186,6 +199,112 @@ def format_container_table(containers: List[ContainerInfo]) -> str:
     lines = [render(headers), render(tuple("-" * width for width in widths))]
     lines.extend(render(row) for row in rows)
     return "\n".join(lines)
+
+
+def format_container_table(containers: List[ContainerInfo]) -> str:
+    if not containers:
+        return "No running containers."
+
+    headers = ("ID", "NAME", "WRITABLE", "VIRTUAL")
+    rows = [
+        (item.id, item.name, item.writable_size, item.virtual_size)
+        for item in containers
+    ]
+    return _format_table(headers, rows)
+
+
+def _is_named_image(image: ImageInfo) -> bool:
+    return image.name not in ("", "<none>") and image.tag not in ("", "<none>")
+
+
+def parse_images(output: str) -> Tuple[List[ImageInfo], str]:
+    images = []
+    parsing = False
+    for raw in output.splitlines():
+        line = raw.strip()
+        if not line:
+            if parsing:
+                break
+            continue
+        if not parsing:
+            if line.upper().startswith("REPOSITORY"):
+                parsing = True
+            continue
+
+        tokens = line.split()
+        if len(tokens) < 8:
+            return [], (
+                f"Could not parse docker system df output: {line[:200]}"
+            )
+        try:
+            containers = int(tokens[-1])
+        except ValueError:
+            return [], (
+                f"Could not parse container count: {line[:200]}"
+            )
+
+        images.append(
+            ImageInfo(
+                id=tokens[2][:_SHORT_ID_LENGTH],
+                name=tokens[0],
+                tag=tokens[1],
+                size=tokens[-4],
+                shared_size=tokens[-3],
+                unique_size=tokens[-2],
+                containers=str(containers),
+            )
+        )
+
+    if not parsing:
+        return [], "Could not find the Images section in docker system df output."
+
+    named = [image for image in images if _is_named_image(image)]
+    rest = [image for image in images if not _is_named_image(image)]
+    return named + rest, ""
+
+
+async def list_images() -> ImageListResult:
+    result = await _run_docker(
+        IMAGE_LIST_COMMAND, config.IMAGE_LIST_TIMEOUT_SECONDS
+    )
+    if result.timed_out:
+        return ImageListResult(error=result.output, timed_out=True)
+    if result.returncode != 0:
+        return ImageListResult(
+            error=result.output
+            or f"docker system df failed (exit code {result.returncode})."
+        )
+
+    images, error = parse_images(result.output)
+    return ImageListResult(images=images, error=error)
+
+
+def format_image_table(images: List[ImageInfo]) -> str:
+    if not images:
+        return "No images."
+
+    headers = (
+        "ID",
+        "NAME",
+        "TAG",
+        "SIZE",
+        "SHARED",
+        "UNIQUE",
+        "CONTAINERS",
+    )
+    rows = [
+        (
+            item.id,
+            item.name,
+            item.tag,
+            item.size,
+            item.shared_size,
+            item.unique_size,
+            item.containers,
+        )
+        for item in images
+    ]
+    return _format_table(headers, rows)
 
 
 def _reclaimed_line(output: str) -> Optional[str]:

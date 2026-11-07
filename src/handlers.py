@@ -60,6 +60,24 @@ async def _send_table(message, table: str) -> None:
         await message.reply_text(text, parse_mode="HTML")
 
 
+async def cmd_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _is_admin(update):
+        return
+
+    args = [arg.lower() for arg in (context.args or [])]
+    if args != ["ls"]:
+        await update.message.reply_text("Usage: /image ls")
+        return
+
+    status = await update.message.reply_text("Fetching images...")
+    result = await docker_ops.list_images()
+    if result.error:
+        await status.edit_text(f"Could not list images.\n\n{result.error}")
+        return
+
+    await _send_table(status, docker_ops.format_image_table(result.images))
+
+
 async def cmd_ps(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_admin(update):
         return
