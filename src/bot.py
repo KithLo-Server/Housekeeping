@@ -16,6 +16,7 @@ def _register_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("image", handlers.cmd_image))
     application.add_handler(CommandHandler("volume", handlers.cmd_volume))
     application.add_handler(CommandHandler("container", handlers.cmd_container))
+    application.add_handler(CommandHandler("pull", handlers.cmd_pull))
     application.add_handler(CallbackQueryHandler(handlers.handle_callback))
 
 

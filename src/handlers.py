@@ -213,6 +213,23 @@ async def cmd_ps(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _send_table(status, docker_ops.format_container_table(result.containers))
 
 
+async def cmd_pull(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _is_admin(update):
+        return
+
+    args = list(context.args or [])
+    if len(args) != 1 or not args[0] or args[0].startswith("-"):
+        await update.message.reply_text("Usage: /pull <IMAGE>")
+        return
+
+    identifier = args[0]
+    status = await update.message.reply_text(f"Pulling {identifier}...")
+    result = await docker_ops.pull_image(identifier)
+    await status.edit_text(
+        docker_ops.format_pull_result(identifier, result)
+    )
+
+
 async def cmd_purge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_admin(update):
         return

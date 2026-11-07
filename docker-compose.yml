@@ -21,6 +21,7 @@ services:
       - "VOLUME_LIST_TIMEOUT_SECONDS=${VOLUME_LIST_TIMEOUT_SECONDS:-120}"
       - "VOLUME_RM_TIMEOUT_SECONDS=${VOLUME_RM_TIMEOUT_SECONDS:-120}"
       - "CONTAINER_RM_TIMEOUT_SECONDS=${CONTAINER_RM_TIMEOUT_SECONDS:-120}"
+      - "PULL_TIMEOUT_SECONDS=${PULL_TIMEOUT_SECONDS:-600}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:

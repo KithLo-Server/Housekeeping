@@ -18,6 +18,7 @@ SYSTEM_DF_COMMAND = ("docker", "system", "df", "-v")
 IMAGE_REMOVE_PREFIX = ("docker", "image", "rm")
 VOLUME_REMOVE_PREFIX = ("docker", "volume", "rm")
 CONTAINER_REMOVE_PREFIX = ("docker", "container", "rm")
+PULL_PREFIX = ("docker", "pull")
 
 _ACTIVE_STATES = frozenset({"running", "paused", "restarting"})
 
@@ -293,6 +294,38 @@ async def remove_containers(identifiers: Sequence[str]) -> CommandResult:
         return await _run_docker(
             command, config.CONTAINER_RM_TIMEOUT_SECONDS
         )
+
+
+async def pull_image(identifier: str) -> CommandResult:
+    """Runs docker pull for a single image reference."""
+    command = (*PULL_PREFIX, identifier)
+    async with _mutation_lock:
+        return await _run_docker(command, config.PULL_TIMEOUT_SECONDS)
+
+
+def format_pull_result(identifier: str, result: CommandResult) -> str:
+    output = result.output.replace("\r", "\n").strip()
+
+    if result.timed_out:
+        return f"Pulling {identifier} timed out.\n\n{output}"
+
+    if result.returncode != 0:
+        details = output or "No error output was produced."
+        return (
+            f"Could not pull {identifier} "
+            f"(exit code {result.returncode}).\n\n"
+            f"{details[:_MAX_OUTPUT_CHARS]}"
+        )
+
+    summary = [
+        "Image pulled.",
+        "",
+        f"Identifier: {identifier}",
+        f"Command: {result.command}",
+    ]
+    if output:
+        summary.extend(["", output[:_MAX_OUTPUT_CHARS]])
+    return "\n".join(summary)
 
 
 def _format_removal(
