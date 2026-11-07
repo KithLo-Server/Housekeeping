@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   deploy:
-    runs-on: [self-hosted, shared]
+    runs-on: self-hosted
     env:
       HOUSEKEEPING_ADMIN_USER_ID: ${{ vars.HOUSEKEEPING_ADMIN_USER_ID }}
       HOUSEKEEPING_BOT_TOKEN: ${{ secrets.HOUSEKEEPING_BOT_TOKEN }}
