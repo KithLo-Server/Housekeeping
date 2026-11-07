@@ -41,6 +41,7 @@ def parse_admin_ids(value: str) -> FrozenSet[int]:
 ADMIN_USER_IDS = parse_admin_ids(os.getenv("HOUSEKEEPING_ADMIN_USER_ID", ""))
 
 PRUNE_TIMEOUT_SECONDS = int(os.getenv("PRUNE_TIMEOUT_SECONDS", "600"))
+PS_TIMEOUT_SECONDS = int(os.getenv("PS_TIMEOUT_SECONDS", "120"))
 
 TELEGRAM_READ_TIMEOUT = float(os.getenv("TELEGRAM_READ_TIMEOUT", "120"))
 TELEGRAM_WRITE_TIMEOUT = float(os.getenv("TELEGRAM_WRITE_TIMEOUT", "120"))

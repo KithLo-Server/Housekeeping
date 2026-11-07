@@ -1,6 +1,8 @@
-"""Handlers for the /purge command and its inline keyboard."""
+"""Handlers for the /purge and /ps commands."""
 
+import html
 import logging
+from typing import List
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -23,6 +25,54 @@ async def _edit(query, text: str) -> None:
     except Exception:
         if query.message:
             await query.message.reply_text(text)
+
+
+_MAX_TABLE_CHARS = 3500
+
+
+def _table_chunks(table: str, limit: int = _MAX_TABLE_CHARS) -> List[str]:
+    lines = table.splitlines()
+    if len(lines) <= 2:
+        return ["\n".join(lines)]
+
+    header = lines[:2]
+    chunks: List[str] = []
+    current = list(header)
+    for line in lines[2:]:
+        size = sum(len(item) + 1 for item in current) + len(line) + 1
+        if size > limit and len(current) > len(header):
+            chunks.append("\n".join(current))
+            current = list(header)
+        current.append(line)
+    chunks.append("\n".join(current))
+    return chunks
+
+
+async def _send_table(message, table: str) -> None:
+    for index, chunk in enumerate(_table_chunks(table)):
+        text = f"<pre>{html.escape(chunk)}</pre>"
+        if index == 0:
+            try:
+                await message.edit_text(text, parse_mode="HTML")
+                continue
+            except Exception:
+                pass
+        await message.reply_text(text, parse_mode="HTML")
+
+
+async def cmd_ps(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _is_admin(update):
+        return
+
+    status = await update.message.reply_text("Fetching containers...")
+    result = await docker_ops.list_containers()
+    if result.error:
+        await status.edit_text(
+            f"Could not list containers.\n\n{result.error}"
+        )
+        return
+
+    await _send_table(status, docker_ops.format_container_table(result.containers))
 
 
 async def cmd_purge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

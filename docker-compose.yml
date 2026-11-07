@@ -15,6 +15,7 @@ services:
       - "TELEGRAM_API_BASE_URL=http://telegram_bot_api_server:8081/bot"
       - "TELEGRAM_API_FILE_BASE_URL=http://telegram_bot_api_server:8081/file/bot"
       - "PRUNE_TIMEOUT_SECONDS=${PRUNE_TIMEOUT_SECONDS:-600}"
+      - "PS_TIMEOUT_SECONDS=${PS_TIMEOUT_SECONDS:-120}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
