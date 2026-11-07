@@ -1,0 +1,26 @@
+name: housekeeping_bot
+
+services:
+  housekeeping_bot:
+    image: housekeeping_bot
+    container_name: housekeeping_bot
+    restart: unless-stopped
+    pull_policy: never
+    build:
+      context: .
+    stop_grace_period: 30s
+    environment:
+      - HOUSEKEEPING_BOT_TOKEN=${HOUSEKEEPING_BOT_TOKEN}
+      - "HOUSEKEEPING_ADMIN_USER_ID=${HOUSEKEEPING_ADMIN_USER_ID:-}"
+      - "TELEGRAM_API_BASE_URL=http://telegram_bot_api_server:8081/bot"
+      - "TELEGRAM_API_FILE_BASE_URL=http://telegram_bot_api_server:8081/file/bot"
+      - "PRUNE_TIMEOUT_SECONDS=${PRUNE_TIMEOUT_SECONDS:-600}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      telegram_bot:
+
+networks:
+  telegram_bot:
+    name: telegram_bot
+    external: true
