@@ -76,23 +76,30 @@ async def cmd_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await _send_table(status, docker_ops.format_image_table(result.images))
         return
 
-    if subcommand == "rm" and len(args) == 2:
-        identifier = args[1]
-        if not identifier or identifier.startswith("-"):
-            await update.message.reply_text("Invalid image identifier.")
+    if subcommand == "rm" and len(args) >= 2:
+        identifiers = args[1:]
+        invalid = [
+            identifier
+            for identifier in identifiers
+            if not identifier or identifier.startswith("-")
+        ]
+        if invalid:
+            await update.message.reply_text(
+                "Invalid image identifier: " + ", ".join(invalid)
+            )
             return
 
         status = await update.message.reply_text(
-            f"Removing image {identifier}..."
+            f"Removing {len(identifiers)} image(s)..."
         )
-        result = await docker_ops.remove_image(identifier)
+        result = await docker_ops.remove_images(identifiers)
         await status.edit_text(
-            docker_ops.format_remove_result(identifier, result)
+            docker_ops.format_remove_result(identifiers, result)
         )
         return
 
     await update.message.reply_text(
-        "Usage:\n/image ls\n/image rm <IDENTIFIER>"
+        "Usage:\n/image ls\n/image rm <IDENTIFIER> [IDENTIFIER ...]"
     )
 
 

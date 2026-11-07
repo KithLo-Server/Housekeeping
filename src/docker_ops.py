@@ -4,7 +4,7 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import config
 
@@ -214,21 +214,25 @@ def format_container_table(containers: List[ContainerInfo]) -> str:
     return _format_table(headers, rows)
 
 
-async def remove_image(identifier: str) -> CommandResult:
-    """Runs docker image rm for a single identifier."""
-    command = (*IMAGE_REMOVE_PREFIX, identifier)
+async def remove_images(identifiers: Sequence[str]) -> CommandResult:
+    """Runs docker image rm for one or more identifiers."""
+    command = (*IMAGE_REMOVE_PREFIX, *identifiers)
     async with _mutation_lock:
         return await _run_docker(command, config.IMAGE_RM_TIMEOUT_SECONDS)
 
 
-def format_remove_result(identifier: str, result: CommandResult) -> str:
+def format_remove_result(
+    identifiers: Sequence[str], result: CommandResult
+) -> str:
+    joined = " ".join(identifiers)
+
     if result.timed_out:
-        return f"Removing {identifier} timed out.\n\n{result.output}"
+        return f"Removing {joined} timed out.\n\n{result.output}"
 
     if result.returncode != 0:
         details = result.output or "No error output was produced."
         return (
-            f"Could not remove {identifier} "
+            f"Could not remove {joined} "
             f"(exit code {result.returncode}).\n\n"
             f"{details[:_MAX_OUTPUT_CHARS]}"
         )
@@ -236,7 +240,7 @@ def format_remove_result(identifier: str, result: CommandResult) -> str:
     summary = [
         "Image removed.",
         "",
-        f"Identifier: {identifier}",
+        f"Identifiers: {joined}",
         f"Command: {result.command}",
     ]
     if result.output:
