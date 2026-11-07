@@ -13,8 +13,9 @@ PRUNE_COMMANDS: Dict[str, Tuple[str, ...]] = {
     "all": ("docker", "system", "prune", "-af"),
 }
 PS_COMMAND = ("docker", "ps", "-s", "--format", "{{json .}}")
-IMAGE_LIST_COMMAND = ("docker", "system", "df", "-v")
+SYSTEM_DF_COMMAND = ("docker", "system", "df", "-v")
 IMAGE_REMOVE_PREFIX = ("docker", "image", "rm")
+VOLUME_REMOVE_PREFIX = ("docker", "volume", "rm")
 
 _MAX_OUTPUT_CHARS = 3500
 _SHORT_ID_LENGTH = 12
@@ -73,6 +74,20 @@ class ImageInfo:
 @dataclass
 class ImageListResult:
     images: List[ImageInfo] = field(default_factory=list)
+    error: str = ""
+    timed_out: bool = False
+
+
+@dataclass
+class VolumeInfo:
+    name: str
+    size: str
+    containers: str
+
+
+@dataclass
+class VolumeListResult:
+    volumes: List[VolumeInfo] = field(default_factory=list)
     error: str = ""
     timed_out: bool = False
 
@@ -221,10 +236,18 @@ async def remove_images(identifiers: Sequence[str]) -> CommandResult:
         return await _run_docker(command, config.IMAGE_RM_TIMEOUT_SECONDS)
 
 
-def format_remove_result(
-    identifiers: Sequence[str], result: CommandResult
+async def remove_volumes(names: Sequence[str]) -> CommandResult:
+    """Runs docker volume rm for one or more names."""
+    command = (*VOLUME_REMOVE_PREFIX, *names)
+    async with _mutation_lock:
+        return await _run_docker(command, config.VOLUME_RM_TIMEOUT_SECONDS)
+
+
+def _format_removal(
+    identifiers: Sequence[str], result: CommandResult, noun: str
 ) -> str:
     joined = " ".join(identifiers)
+    subject = noun if len(identifiers) == 1 else f"{noun}s"
 
     if result.timed_out:
         return f"Removing {joined} timed out.\n\n{result.output}"
@@ -238,7 +261,7 @@ def format_remove_result(
         )
 
     summary = [
-        "Image removed.",
+        f"{subject} removed.",
         "",
         f"Identifiers: {joined}",
         f"Command: {result.command}",
@@ -246,6 +269,18 @@ def format_remove_result(
     if result.output:
         summary.extend(["", result.output[:_MAX_OUTPUT_CHARS]])
     return "\n".join(summary)
+
+
+def format_remove_result(
+    identifiers: Sequence[str], result: CommandResult
+) -> str:
+    return _format_removal(identifiers, result, "Image")
+
+
+def format_volume_remove_result(
+    identifiers: Sequence[str], result: CommandResult
+) -> str:
+    return _format_removal(identifiers, result, "Volume")
 
 
 def _is_named_image(image: ImageInfo) -> bool:
@@ -300,7 +335,7 @@ def parse_images(output: str) -> Tuple[List[ImageInfo], str]:
 
 async def list_images() -> ImageListResult:
     result = await _run_docker(
-        IMAGE_LIST_COMMAND, config.IMAGE_LIST_TIMEOUT_SECONDS
+        SYSTEM_DF_COMMAND, config.IMAGE_LIST_TIMEOUT_SECONDS
     )
     if result.timed_out:
         return ImageListResult(error=result.output, timed_out=True)
@@ -338,6 +373,80 @@ def format_image_table(images: List[ImageInfo]) -> str:
             item.containers,
         )
         for item in images
+    ]
+    return _format_table(headers, rows)
+
+
+def parse_volumes(output: str) -> Tuple[List[VolumeInfo], str]:
+    volumes = []
+    parsing = False
+    for raw in output.splitlines():
+        line = raw.strip()
+        if not line:
+            if parsing:
+                break
+            continue
+
+        tokens = line.split()
+        if not parsing:
+            if [token.upper() for token in tokens] == [
+                "NAME",
+                "LINKS",
+                "SIZE",
+            ]:
+                parsing = True
+            continue
+
+        if len(tokens) < 3:
+            return [], (
+                f"Could not parse docker system df output: {line[:200]}"
+            )
+        try:
+            containers = int(tokens[-2])
+        except ValueError:
+            return [], (
+                f"Could not parse container count: {line[:200]}"
+            )
+
+        volumes.append(
+            VolumeInfo(
+                name=" ".join(tokens[:-2]),
+                size=tokens[-1],
+                containers=str(containers),
+            )
+        )
+
+    if not parsing:
+        return [], (
+            "Could not find the Local Volumes section in docker system "
+            "df output."
+        )
+    return volumes, ""
+
+
+async def list_volumes() -> VolumeListResult:
+    result = await _run_docker(
+        SYSTEM_DF_COMMAND, config.VOLUME_LIST_TIMEOUT_SECONDS
+    )
+    if result.timed_out:
+        return VolumeListResult(error=result.output, timed_out=True)
+    if result.returncode != 0:
+        return VolumeListResult(
+            error=result.output
+            or f"docker system df failed (exit code {result.returncode})."
+        )
+
+    volumes, error = parse_volumes(result.output)
+    return VolumeListResult(volumes=volumes, error=error)
+
+
+def format_volume_table(volumes: List[VolumeInfo]) -> str:
+    if not volumes:
+        return "No volumes."
+
+    headers = ("NAME", "SIZE", "CONTAINERS")
+    rows = [
+        (item.name, item.size, item.containers) for item in volumes
     ]
     return _format_table(headers, rows)
 

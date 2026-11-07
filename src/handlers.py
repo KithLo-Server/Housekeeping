@@ -103,6 +103,49 @@ async def cmd_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+async def cmd_volume(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    if not _is_admin(update):
+        return
+
+    args = list(context.args or [])
+    subcommand = args[0].lower() if args else ""
+
+    if subcommand == "ls" and len(args) == 1:
+        status = await update.message.reply_text("Fetching volumes...")
+        result = await docker_ops.list_volumes()
+        if result.error:
+            await status.edit_text(f"Could not list volumes.\n\n{result.error}")
+            return
+        await _send_table(status, docker_ops.format_volume_table(result.volumes))
+        return
+
+    if subcommand == "rm" and len(args) >= 2:
+        names = args[1:]
+        invalid = [
+            name for name in names if not name or name.startswith("-")
+        ]
+        if invalid:
+            await update.message.reply_text(
+                "Invalid volume name: " + ", ".join(invalid)
+            )
+            return
+
+        status = await update.message.reply_text(
+            f"Removing {len(names)} volume(s)..."
+        )
+        result = await docker_ops.remove_volumes(names)
+        await status.edit_text(
+            docker_ops.format_volume_remove_result(names, result)
+        )
+        return
+
+    await update.message.reply_text(
+        "Usage:\n/volume ls\n/volume rm <NAME> [NAME ...]"
+    )
+
+
 async def cmd_ps(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not _is_admin(update):
         return
