@@ -193,8 +193,32 @@ async def cmd_container(
         )
         return
 
+    if subcommand == "stop" and len(args) >= 2:
+        identifiers = args[1:]
+        invalid = [
+            identifier
+            for identifier in identifiers
+            if not identifier or identifier.startswith("-")
+        ]
+        if invalid:
+            await update.message.reply_text(
+                "Invalid container identifier: " + ", ".join(invalid)
+            )
+            return
+
+        status = await update.message.reply_text(
+            f"Stopping {len(identifiers)} container(s)..."
+        )
+        result = await docker_ops.stop_containers(identifiers)
+        await status.edit_text(
+            docker_ops.format_container_stop_result(identifiers, result)
+        )
+        return
+
     await update.message.reply_text(
-        "Usage:\n/container ls\n/container rm <ID> [ID ...]"
+        "Usage:\n/container ls\n"
+        "/container rm <ID> [ID ...]\n"
+        "/container stop <ID> [ID ...]"
     )
 
 

@@ -18,6 +18,7 @@ SYSTEM_DF_COMMAND = ("docker", "system", "df", "-v")
 IMAGE_REMOVE_PREFIX = ("docker", "image", "rm")
 VOLUME_REMOVE_PREFIX = ("docker", "volume", "rm")
 CONTAINER_REMOVE_PREFIX = ("docker", "container", "rm")
+CONTAINER_STOP_PREFIX = ("docker", "container", "stop")
 PULL_PREFIX = ("docker", "pull")
 
 _ACTIVE_STATES = frozenset({"running", "paused", "restarting"})
@@ -296,6 +297,15 @@ async def remove_containers(identifiers: Sequence[str]) -> CommandResult:
         )
 
 
+async def stop_containers(identifiers: Sequence[str]) -> CommandResult:
+    """Runs docker container stop for one or more identifiers."""
+    command = (*CONTAINER_STOP_PREFIX, *identifiers)
+    async with _mutation_lock:
+        return await _run_docker(
+            command, config.CONTAINER_STOP_TIMEOUT_SECONDS
+        )
+
+
 async def pull_image(identifier: str) -> CommandResult:
     """Runs docker pull for a single image reference."""
     command = (*PULL_PREFIX, identifier)
@@ -328,25 +338,30 @@ def format_pull_result(identifier: str, result: CommandResult) -> str:
     return "\n".join(summary)
 
 
-def _format_removal(
-    identifiers: Sequence[str], result: CommandResult, noun: str
+def _format_action(
+    identifiers: Sequence[str],
+    result: CommandResult,
+    noun: str,
+    past: str,
+    gerund: str,
+    verb: str,
 ) -> str:
     joined = " ".join(identifiers)
     subject = noun if len(identifiers) == 1 else f"{noun}s"
 
     if result.timed_out:
-        return f"Removing {joined} timed out.\n\n{result.output}"
+        return f"{gerund} {joined} timed out.\n\n{result.output}"
 
     if result.returncode != 0:
         details = result.output or "No error output was produced."
         return (
-            f"Could not remove {joined} "
+            f"Could not {verb} {joined} "
             f"(exit code {result.returncode}).\n\n"
             f"{details[:_MAX_OUTPUT_CHARS]}"
         )
 
     summary = [
-        f"{subject} removed.",
+        f"{subject} {past}.",
         "",
         f"Identifiers: {joined}",
         f"Command: {result.command}",
@@ -359,19 +374,33 @@ def _format_removal(
 def format_remove_result(
     identifiers: Sequence[str], result: CommandResult
 ) -> str:
-    return _format_removal(identifiers, result, "Image")
+    return _format_action(
+        identifiers, result, "Image", "removed", "Removing", "remove"
+    )
 
 
 def format_volume_remove_result(
     identifiers: Sequence[str], result: CommandResult
 ) -> str:
-    return _format_removal(identifiers, result, "Volume")
+    return _format_action(
+        identifiers, result, "Volume", "removed", "Removing", "remove"
+    )
 
 
 def format_container_remove_result(
     identifiers: Sequence[str], result: CommandResult
 ) -> str:
-    return _format_removal(identifiers, result, "Container")
+    return _format_action(
+        identifiers, result, "Container", "removed", "Removing", "remove"
+    )
+
+
+def format_container_stop_result(
+    identifiers: Sequence[str], result: CommandResult
+) -> str:
+    return _format_action(
+        identifiers, result, "Container", "stopped", "Stopping", "stop"
+    )
 
 
 def _is_named_image(image: ImageInfo) -> bool:
