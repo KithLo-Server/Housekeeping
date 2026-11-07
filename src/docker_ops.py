@@ -13,9 +13,13 @@ PRUNE_COMMANDS: Dict[str, Tuple[str, ...]] = {
     "all": ("docker", "system", "prune", "-af"),
 }
 PS_COMMAND = ("docker", "ps", "-s", "--format", "{{json .}}")
+PS_ALL_COMMAND = ("docker", "ps", "-a", "-s", "--format", "{{json .}}")
 SYSTEM_DF_COMMAND = ("docker", "system", "df", "-v")
 IMAGE_REMOVE_PREFIX = ("docker", "image", "rm")
 VOLUME_REMOVE_PREFIX = ("docker", "volume", "rm")
+CONTAINER_REMOVE_PREFIX = ("docker", "container", "rm")
+
+_ACTIVE_STATES = frozenset({"running", "paused", "restarting"})
 
 _MAX_OUTPUT_CHARS = 3500
 _SHORT_ID_LENGTH = 12
@@ -51,6 +55,8 @@ class ContainerInfo:
     name: str
     writable_size: str
     virtual_size: str
+    state: str
+    status: str
 
 
 @dataclass
@@ -180,13 +186,15 @@ def parse_containers(output: str) -> Tuple[List[ContainerInfo], str]:
                 name=str(data.get("Names") or "\u2014"),
                 writable_size=writable or "\u2014",
                 virtual_size=virtual or "\u2014",
+                state=str(data.get("State") or ""),
+                status=str(data.get("Status") or "\u2014"),
             )
         )
     return containers, ""
 
 
-async def list_containers() -> ContainerListResult:
-    result = await _run_docker(PS_COMMAND, config.PS_TIMEOUT_SECONDS)
+async def _list_containers(command: Tuple[str, ...]) -> ContainerListResult:
+    result = await _run_docker(command, config.PS_TIMEOUT_SECONDS)
     if result.timed_out:
         return ContainerListResult(error=result.output, timed_out=True)
     if result.returncode != 0:
@@ -197,6 +205,32 @@ async def list_containers() -> ContainerListResult:
 
     containers, error = parse_containers(result.output)
     return ContainerListResult(containers=containers, error=error)
+
+
+async def list_containers() -> ContainerListResult:
+    return await _list_containers(PS_COMMAND)
+
+
+def _is_active_container(container: ContainerInfo) -> bool:
+    return container.state.lower() in _ACTIVE_STATES
+
+
+async def list_all_containers() -> ContainerListResult:
+    result = await _list_containers(PS_ALL_COMMAND)
+    if result.error:
+        return result
+
+    active = [
+        container
+        for container in result.containers
+        if _is_active_container(container)
+    ]
+    rest = [
+        container
+        for container in result.containers
+        if not _is_active_container(container)
+    ]
+    return ContainerListResult(containers=active + rest)
 
 
 def _format_table(
@@ -217,13 +251,22 @@ def _format_table(
     return "\n".join(lines)
 
 
-def format_container_table(containers: List[ContainerInfo]) -> str:
+def format_container_table(
+    containers: List[ContainerInfo],
+    empty_message: str = "No running containers.",
+) -> str:
     if not containers:
-        return "No running containers."
+        return empty_message
 
-    headers = ("ID", "NAME", "WRITABLE", "VIRTUAL")
+    headers = ("ID", "NAME", "STATUS", "WRITABLE", "VIRTUAL")
     rows = [
-        (item.id, item.name, item.writable_size, item.virtual_size)
+        (
+            item.id,
+            item.name,
+            item.status,
+            item.writable_size,
+            item.virtual_size,
+        )
         for item in containers
     ]
     return _format_table(headers, rows)
@@ -241,6 +284,15 @@ async def remove_volumes(names: Sequence[str]) -> CommandResult:
     command = (*VOLUME_REMOVE_PREFIX, *names)
     async with _mutation_lock:
         return await _run_docker(command, config.VOLUME_RM_TIMEOUT_SECONDS)
+
+
+async def remove_containers(identifiers: Sequence[str]) -> CommandResult:
+    """Runs docker container rm for one or more identifiers."""
+    command = (*CONTAINER_REMOVE_PREFIX, *identifiers)
+    async with _mutation_lock:
+        return await _run_docker(
+            command, config.CONTAINER_RM_TIMEOUT_SECONDS
+        )
 
 
 def _format_removal(
@@ -281,6 +333,12 @@ def format_volume_remove_result(
     identifiers: Sequence[str], result: CommandResult
 ) -> str:
     return _format_removal(identifiers, result, "Volume")
+
+
+def format_container_remove_result(
+    identifiers: Sequence[str], result: CommandResult
+) -> str:
+    return _format_removal(identifiers, result, "Container")
 
 
 def _is_named_image(image: ImageInfo) -> bool:
