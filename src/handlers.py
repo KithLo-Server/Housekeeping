@@ -171,13 +171,10 @@ async def _container_action(
     await status.edit_text(formatter(identifiers, result))
 
 
-async def cmd_container(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> None:
+async def _handle_container(update: Update, args: List[str]) -> None:
     if not _is_admin(update):
         return
 
-    args = list(context.args or [])
     subcommand = args[0].lower() if args else ""
 
     if subcommand == "ls" and len(args) == 1:
@@ -231,8 +228,33 @@ async def cmd_container(
         "/container rm <ID> [ID ...]\n"
         "/container stop <ID> [ID ...]\n"
         "/container start <ID> [ID ...]\n"
-        "/container restart <ID> [ID ...]"
+        "/container restart <ID> [ID ...]\n"
+        "/start <ID> [ID ...]  (alias of /container start)\n"
+        "/stop <ID> [ID ...]  (alias of /container stop)\n"
+        "/restart <ID> [ID ...]  (alias of /container restart)"
     )
+
+
+async def cmd_container(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    await _handle_container(update, list(context.args or []))
+
+
+async def cmd_start(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    await _handle_container(update, ["start", *list(context.args or [])])
+
+
+async def cmd_stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _handle_container(update, ["stop", *list(context.args or [])])
+
+
+async def cmd_restart(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    await _handle_container(update, ["restart", *list(context.args or [])])
 
 
 async def cmd_ps(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
