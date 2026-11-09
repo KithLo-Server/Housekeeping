@@ -19,6 +19,8 @@ IMAGE_REMOVE_PREFIX = ("docker", "image", "rm")
 VOLUME_REMOVE_PREFIX = ("docker", "volume", "rm")
 CONTAINER_REMOVE_PREFIX = ("docker", "container", "rm")
 CONTAINER_STOP_PREFIX = ("docker", "container", "stop")
+CONTAINER_START_PREFIX = ("docker", "container", "start")
+CONTAINER_RESTART_PREFIX = ("docker", "container", "restart")
 PULL_PREFIX = ("docker", "pull")
 
 _ACTIVE_STATES = frozenset({"running", "paused", "restarting"})
@@ -306,6 +308,24 @@ async def stop_containers(identifiers: Sequence[str]) -> CommandResult:
         )
 
 
+async def start_containers(identifiers: Sequence[str]) -> CommandResult:
+    """Runs docker container start for one or more identifiers."""
+    command = (*CONTAINER_START_PREFIX, *identifiers)
+    async with _mutation_lock:
+        return await _run_docker(
+            command, config.CONTAINER_START_TIMEOUT_SECONDS
+        )
+
+
+async def restart_containers(identifiers: Sequence[str]) -> CommandResult:
+    """Runs docker container restart for one or more identifiers."""
+    command = (*CONTAINER_RESTART_PREFIX, *identifiers)
+    async with _mutation_lock:
+        return await _run_docker(
+            command, config.CONTAINER_RESTART_TIMEOUT_SECONDS
+        )
+
+
 async def pull_image(identifier: str) -> CommandResult:
     """Runs docker pull for a single image reference."""
     command = (*PULL_PREFIX, identifier)
@@ -400,6 +420,22 @@ def format_container_stop_result(
 ) -> str:
     return _format_action(
         identifiers, result, "Container", "stopped", "Stopping", "stop"
+    )
+
+
+def format_container_start_result(
+    identifiers: Sequence[str], result: CommandResult
+) -> str:
+    return _format_action(
+        identifiers, result, "Container", "started", "Starting", "start"
+    )
+
+
+def format_container_restart_result(
+    identifiers: Sequence[str], result: CommandResult
+) -> str:
+    return _format_action(
+        identifiers, result, "Container", "restarted", "Restarting", "restart"
     )
 
 

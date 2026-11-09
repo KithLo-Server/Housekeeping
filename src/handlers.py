@@ -146,6 +146,31 @@ async def cmd_volume(
     )
 
 
+async def _container_action(
+    update: Update,
+    identifiers: List[str],
+    gerund: str,
+    action,
+    formatter,
+) -> None:
+    invalid = [
+        identifier
+        for identifier in identifiers
+        if not identifier or identifier.startswith("-")
+    ]
+    if invalid:
+        await update.message.reply_text(
+            "Invalid container identifier: " + ", ".join(invalid)
+        )
+        return
+
+    status = await update.message.reply_text(
+        f"{gerund} {len(identifiers)} container(s)..."
+    )
+    result = await action(identifiers)
+    await status.edit_text(formatter(identifiers, result))
+
+
 async def cmd_container(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -171,54 +196,42 @@ async def cmd_container(
         )
         return
 
-    if subcommand == "rm" and len(args) >= 2:
-        identifiers = args[1:]
-        invalid = [
-            identifier
-            for identifier in identifiers
-            if not identifier or identifier.startswith("-")
-        ]
-        if invalid:
-            await update.message.reply_text(
-                "Invalid container identifier: " + ", ".join(invalid)
-            )
-            return
-
-        status = await update.message.reply_text(
-            f"Removing {len(identifiers)} container(s)..."
-        )
-        result = await docker_ops.remove_containers(identifiers)
-        await status.edit_text(
-            docker_ops.format_container_remove_result(identifiers, result)
-        )
-        return
-
-    if subcommand == "stop" and len(args) >= 2:
-        identifiers = args[1:]
-        invalid = [
-            identifier
-            for identifier in identifiers
-            if not identifier or identifier.startswith("-")
-        ]
-        if invalid:
-            await update.message.reply_text(
-                "Invalid container identifier: " + ", ".join(invalid)
-            )
-            return
-
-        status = await update.message.reply_text(
-            f"Stopping {len(identifiers)} container(s)..."
-        )
-        result = await docker_ops.stop_containers(identifiers)
-        await status.edit_text(
-            docker_ops.format_container_stop_result(identifiers, result)
+    actions = {
+        "rm": (
+            "Removing",
+            docker_ops.remove_containers,
+            docker_ops.format_container_remove_result,
+        ),
+        "stop": (
+            "Stopping",
+            docker_ops.stop_containers,
+            docker_ops.format_container_stop_result,
+        ),
+        "start": (
+            "Starting",
+            docker_ops.start_containers,
+            docker_ops.format_container_start_result,
+        ),
+        "restart": (
+            "Restarting",
+            docker_ops.restart_containers,
+            docker_ops.format_container_restart_result,
+        ),
+    }
+    entry = actions.get(subcommand)
+    if entry and len(args) >= 2:
+        gerund, action, formatter = entry
+        await _container_action(
+            update, args[1:], gerund, action, formatter
         )
         return
 
     await update.message.reply_text(
         "Usage:\n/container ls\n"
         "/container rm <ID> [ID ...]\n"
-        "/container stop <ID> [ID ...]"
+        "/container stop <ID> [ID ...]\n"
+        "/container start <ID> [ID ...]\n"
+        "/container restart <ID> [ID ...]"
     )
 
 
